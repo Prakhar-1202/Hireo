@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>The Academic Curator - AI Job Assistant</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap"
+    rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+    rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "on-surface-variant": "#424656", "tertiary-fixed-dim": "#ffb59d", "inverse-surface": "#2e3132", "on-tertiary-container": "#fff6f4",
+            "error-container": "#ffdad6", "surface-dim": "#d9dadb", "primary-fixed-dim": "#b3c5ff", "surface-bright": "#f8f9fa",
+            "inverse-primary": "#b3c5ff", "primary": "#0050cb", "surface-container-high": "#e7e8e9", "on-error": "#ffffff",
+            "surface-container-highest": "#e1e3e4", "tertiary": "#a33200", "on-error-container": "#93000a", "on-tertiary": "#ffffff",
+            "on-secondary-container": "#294487", "surface-tint": "#0054d6", "tertiary-fixed": "#ffdbd0", "secondary-fixed": "#dae1ff",
+            "on-secondary-fixed-variant": "#284386", "on-tertiary-fixed": "#390c00", "secondary-container": "#9bb4fe", "on-background": "#191c1d",
+            "on-secondary": "#ffffff", "on-surface": "#191c1d", "error": "#ba1a1a", "background": "#f8f9fa", "surface-container": "#edeeef",
+            "on-primary-container": "#f8f7ff", "primary-fixed": "#dae1ff", "outline": "#727687", "surface": "#f8f9fa", "on-secondary-fixed": "#001849",
+            "secondary-fixed-dim": "#b3c5ff", "surface-container-low": "#f3f4f5", "surface-variant": "#e1e3e4", "surface-container-lowest": "#ffffff",
+            "secondary": "#425ca0", "on-primary-fixed": "#001849", "outline-variant": "#c2c6d8", "on-primary": "#ffffff",
+            "tertiary-container": "#cc4204", "inverse-on-surface": "#f0f1f2", "on-primary-fixed-variant": "#003fa4",
+            "on-tertiary-fixed-variant": "#832600", "primary-container": "#0066ff"
+          },
+          fontFamily: {
+            "headline": ["Manrope"], "body": ["Inter"], "label": ["Inter"]
+          },
+          borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+        },
+      },
+    }
+  </script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body class="font-body selection:bg-primary/20 bg-surface text-on-surface min-h-[100dvh]">
+  <header
+    class="fixed top-0 w-full z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md shadow-sm dark:shadow-none flex items-center justify-between px-6 py-4">
+    <div class="flex items-center gap-3">
+      <div
+        class="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-on-primary-fixed overflow-hidden">
+        <span class="material-symbols-outlined pb-1">school</span>
+      </div>
+      <span class="font-manrope font-extrabold text-blue-600 dark:text-blue-400 tracking-tighter text-lg">The Academic
+        Curator</span>
+    </div>
+    <nav class="hidden md:flex gap-8 items-center">
+      <a class="nav-link font-inter text-[11px] font-semibold uppercase tracking-widest text-slate-500 hover:text-blue-500 transition-colors cursor-pointer active"
+        onclick="showSection('upload-section', this)">Home</a>
+      <a class="nav-link font-inter text-[11px] font-semibold uppercase tracking-widest text-slate-500 hover:text-blue-500 transition-colors cursor-pointer"
+        onclick="showSection('results-section', this)">Results</a>
+      <a class="nav-link font-inter text-[11px] font-semibold uppercase tracking-widest text-slate-500 hover:text-blue-500 transition-colors cursor-pointer"
+        onclick="showSection('tracker-section', this)">Tracker</a>
+    </nav>
+    <button
+      class="material-symbols-outlined text-on-surface-variant hover:bg-slate-100/50 p-2 rounded-full transition-colors active:scale-95 duration-150">more_vert</button>
+  </header>
+
+  <main class="pt-28 pb-32 px-6 max-w-7xl mx-auto">
+    <div id="upload-section" class="section active">
+      <section class="mb-16 text-center md:text-left max-w-3xl">
+        <h1 class="font-headline font-extrabold text-4xl md:text-6xl text-on-surface tracking-tight leading-[1.1] mb-6">
+          AI Job Assistant <span class="text-primary">(Lite)</span>
+        </h1>
+        <p class="font-body text-lg md:text-xl text-on-surface-variant leading-relaxed">
+          Your AI-powered tool for landing your dream job. Upload your resume and let's get started on optimizing your
+          career path.
+        </p>
+      </section>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <div
+          class="lg:col-span-8 bg-surface-container-lowest p-8 md:p-12 rounded-xl shadow-[0px_12px_32px_rgba(25,28,29,0.06)] relative z-10">
+          <div id="dropZone"
+            class="relative group border-2 border-dashed border-outline-variant/30 rounded-xl hover:border-primary/50 transition-all duration-300 p-8 md:p-16 flex flex-col items-center justify-center text-center bg-surface-container-low/20">
+            <div class="w-16 h-16 bg-primary-fixed flex items-center justify-center rounded-full mb-6">
+              <span class="material-symbols-outlined text-primary text-3xl" data-icon="upload">upload</span>
+            </div>
+            <h3 class="font-headline font-bold text-xl mb-2">Drag and drop your resume</h3>
+            <p class="font-body text-on-surface-variant mb-8">PDF or TXT</p>
+            <label for="fileInput"
+              class="bg-surface-container-highest px-8 py-3 rounded-full font-semibold text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 cursor-pointer">
+              Browse Files
+            </label>
+            <input type="file" id="fileInput" accept=".txt,.pdf" class="hidden" />
+          </div>
+
+          <div class="mt-8">
+            <div
+              class="flex items-center gap-4 mb-4 text-on-surface-variant text-sm font-label uppercase tracking-widest opacity-60">
+              <div class="flex-1 h-px bg-outline-variant/30"></div>
+              <span>or paste resume text</span>
+              <div class="flex-1 h-px bg-outline-variant/30"></div>
+            </div>
+            <textarea id="resumeText"
+              class="w-full h-48 bg-surface-container-lowest border border-outline-variant/15 rounded-xl p-4 text-on-surface font-body text-sm focus:border-primary focus:ring-4 focus:ring-primary-fixed/30 transition-all resize-y"
+              placeholder="Paste your resume content here..."></textarea>
+
+            <div class="flex items-center justify-end mt-2">
+              <span id="charCount" class="text-xs text-on-surface-variant font-label">0 characters</span>
+            </div>
+          </div>
+
+          <div class="mt-8 flex flex-col items-center">
+            <button onclick="analyzeResume()"
+              class="w-full md:w-auto px-10 py-4 bg-gradient-to-br from-primary to-primary-container text-on-primary rounded-full font-bold text-lg shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 justify-center">
+              <span class="material-symbols-outlined">analytics</span> Analyze Resume
+            </button>
+
+            <div id="loader" hidden class="mt-6 flex flex-col items-center animate-pulse">
+              <div class="flex gap-2 mb-2">
+                <div class="w-2.5 h-2.5 rounded-full bg-primary animate-bounce"></div>
+                <div class="w-2.5 h-2.5 rounded-full bg-primary animate-bounce" style="animation-delay: 0.1s"></div>
+                <div class="w-2.5 h-2.5 rounded-full bg-primary animate-bounce" style="animation-delay: 0.2s"></div>
+              </div>
+              <p class="text-sm text-on-surface-variant">Analyzing your resume…</p>
+            </div>
+
+            <div id="errorBox" hidden
+              class="mt-6 w-full p-4 rounded-xl bg-error-container text-on-error-container text-sm border border-error/20 font-medium text-center">
+            </div>
+
+            <div
+              class="mt-4 flex items-center gap-2 text-xs text-on-surface-variant font-label uppercase tracking-widest opacity-60">
+              <span class="material-symbols-outlined text-xs" data-icon="security"
+                style="font-variation-settings: 'FILL' 1;">security</span>
+              Encrypted & Private
+            </div>
+          </div>
+        </div>
+
+        <aside class="lg:col-span-4 space-y-6">
+          <div class="bg-surface-container-low p-6 rounded-xl relative overflow-hidden">
+            <div class="absolute -top-12 -right-12 w-32 h-32 bg-tertiary-container/10 blur-3xl rounded-full"></div>
+            <h4 class="font-headline font-bold text-lg mb-4 flex items-center gap-2">
+              <span class="material-symbols-outlined text-tertiary text-xl" data-icon="auto_awesome"
+                style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+              Why Upload?
+            </h4>
+            <ul class="space-y-4">
+              <li class="flex gap-3">
+                <span class="text-primary font-manrope font-bold">01.</span>
+                <p class="text-sm text-on-surface-variant leading-snug">Instant ATS compatibility scoring against top
+                  industry standards.</p>
+              </li>
+              <li class="flex gap-3">
+                <span class="text-primary font-manrope font-bold">02.</span>
+                <p class="text-sm text-on-surface-variant leading-snug">AI-driven keyword suggestions to pass initial
+                  recruiter filters.</p>
+              </li>
+              <li class="flex gap-3">
+                <span class="text-primary font-manrope font-bold">03.</span>
+                <p class="text-sm text-on-surface-variant leading-snug">Automated job matching based on your unique
+                  skill set.</p>
+              </li>
+            </ul>
+          </div>
+
+          <div class="bg-surface-container-low rounded-xl p-6 border border-outline-variant/10">
+            <h3 class="font-headline font-bold text-sm mb-3 flex items-center gap-2 text-on-surface">
+              <span class="material-symbols-outlined text-base">lightbulb</span> Tips for best results
+            </h3>
+            <ul class="space-y-2">
+              <li class="text-xs text-on-surface-variant flex gap-2"><span class="text-primary font-bold">·</span>
+                Include all your technical skills explicitly</li>
+              <li class="text-xs text-on-surface-variant flex gap-2"><span class="text-primary font-bold">·</span>
+                Mention tools, frameworks, and programming languages</li>
+              <li class="text-xs text-on-surface-variant flex gap-2"><span class="text-primary font-bold">·</span> Add
+                project descriptions with technology stacks</li>
+            </ul>
+          </div>
+        </aside>
+      </div>
+
+      <section class="mt-24 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div
+          class="p-8 rounded-xl bg-surface-container-lowest border border-outline-variant/15 hover:border-primary/30 transition-all shadow-sm hover:shadow-[0px_12px_32px_rgba(25,28,29,0.06)] group">
+          <span
+            class="material-symbols-outlined text-3xl text-primary mb-4 block group-hover:scale-110 transition-transform">psychology</span>
+          <h3 class="font-headline font-bold text-lg mb-2">Smart Analysis</h3>
+          <p class="text-sm text-on-surface-variant">We don't just read words; we understand context, impact, and
+            quantify your achievements.</p>
+        </div>
+        <div
+          class="p-8 rounded-xl bg-surface-container-lowest border border-outline-variant/15 hover:border-primary/30 transition-all shadow-sm hover:shadow-[0px_12px_32px_rgba(25,28,29,0.06)] group">
+          <span
+            class="material-symbols-outlined text-3xl text-primary mb-4 block group-hover:scale-110 transition-transform">target</span>
+          <h3 class="font-headline font-bold text-lg mb-2">Targeted Suggestions</h3>
+          <p class="text-sm text-on-surface-variant">Receive specific tweaks for your bullet points to maximize
+            recruiter engagement.</p>
+        </div>
+        <div
+          class="p-8 rounded-xl bg-surface-container-lowest border border-outline-variant/15 hover:border-primary/30 transition-all shadow-sm hover:shadow-[0px_12px_32px_rgba(25,28,29,0.06)] group">
+          <span
+            class="material-symbols-outlined text-3xl text-primary mb-4 block group-hover:scale-110 transition-transform">insights</span>
+          <h3 class="font-headline font-bold text-lg mb-2">Market Insights</h3>
+          <p class="text-sm text-on-surface-variant">See how your profile stacks up against current market demands in
+            real-time.</p>
+        </div>
+      </section>
+    </div>
+
+    <div id="results-section" class="section">
+      <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+        <h2 class="font-headline font-extrabold text-3xl md:text-4xl text-on-surface tracking-tight">Analysis Results
+        </h2>
+        <button
+          class="bg-surface-container-highest px-6 py-2.5 rounded-full font-semibold text-sm text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 flex items-center gap-2"
+          onclick="showSection('upload-section')">
+          <span class="material-symbols-outlined text-sm">arrow_back</span> Analyze Another
+        </button>
+      </div>
+
+      <div id="no-results"
+        class="bg-surface-container-lowest border border-outline-variant/15 p-12 md:p-24 rounded-xl text-center flex flex-col items-center justify-center">
+        <div class="w-20 h-20 bg-surface-container-low rounded-full flex items-center justify-center mb-6">
+          <span class="material-symbols-outlined text-4xl text-outline-variant/80">manage_search</span>
+        </div>
+        <p class="font-body text-lg text-on-surface-variant mb-8 max-w-md">No results yet. Upload and analyze your
+          resume first to unlock personalized insights!</p>
+        <button
+          class="bg-gradient-to-br from-primary to-primary-container text-on-primary px-8 py-3.5 rounded-full font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all active:scale-95"
+          onclick="showSection('upload-section')">Go to Resume Upload</button>
+      </div>
+
+      <div id="results-content" hidden>
+        <div class="mb-12 mt-4 flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div>
+            <h2 class="font-headline font-extrabold text-4xl text-on-surface tracking-tight mb-2">Analysis Complete.</h2>
+            <p class="font-body text-on-surface-variant text-lg">Your profile has been curated with AI insights to align with market demands.</p>
+          </div>
+          <div class="flex items-center gap-4 bg-surface-container-lowest py-3 px-6 rounded-full shadow-sm border border-outline-variant/15 shrink-0">
+            <span class="text-on-surface-variant font-label text-xs uppercase tracking-widest font-bold">Resume Score</span>
+            <div class="flex items-center gap-2">
+              <span id="resumeScoreDisplay" class="font-headline font-extrabold text-3xl text-primary">0</span>
+              <span class="text-xl text-outline-variant font-medium">/ 100</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bento Grid Layout -->
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+          <!-- Section 1: Extracted Skills & Missing Skills -->
+          <section class="md:col-span-7 flex flex-col gap-6">
+            <div class="bg-surface-container-lowest rounded-xl p-8 shadow-[0px_12px_32px_rgba(25,28,29,0.04)] border border-outline-variant/15">
+              <div class="flex items-center justify-between mb-6">
+                <h3 class="font-headline font-bold text-xl text-primary">Extracted Skills</h3>
+                <span class="text-xs font-label font-semibold uppercase tracking-widest text-outline">Verified</span>
+              </div>
+              <div id="skillsGrid" class="flex flex-wrap gap-3"></div>
+              
+              <div class="mt-8 relative h-48 rounded-xl overflow-hidden group">
+                <img alt="Technical Workspace" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBiAIU8FE4eL-JArgkmyyYDAJGo4x4i9VhO7naBeaJHSis2O5952251kVmJ5qPXS2hPnR_7_c4ICbdXVxvrFTrCNt9oNmiBvTJpRvB1unPCm3ZuiC7Ry-DbXJcZl8L3zhaNbe-ex6yKAQrWuvaqqxpg-Vs-biKbqhiEZhSxcp9XJ8HdAg2svYD4KEGIos46JRnbzmuexcthtdLQwdgQ9Fq2rlC6_YcMMyW-uB0miaiY7vbNFpdSO7S7cZbBsuh8KrkXSAezxWinmBE"/>
+                <div class="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
+                <div class="absolute bottom-4 left-4 text-white font-headline font-bold text-sm">Tech Stack Analysis 2024</div>
+              </div>
+            </div>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div class="bg-surface-container-lowest rounded-xl p-6 shadow-[0px_12px_32px_rgba(25,28,29,0.04)] border border-outline-variant/15">
+                <h3 class="font-headline font-bold text-base text-error flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-sm">warning</span> Missing Skills</h3>
+                <div id="missingSkillsGrid" class="flex flex-wrap gap-2"></div>
+              </div>
+              <div class="bg-surface-container-lowest rounded-xl p-6 shadow-[0px_12px_32px_rgba(25,28,29,0.04)] border border-outline-variant/15">
+                <h3 class="font-headline font-bold text-base text-secondary flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-sm">fitness_center</span> Key Strengths</h3>
+                <ul id="strengthsList" class="space-y-3"></ul>
+              </div>
+            </div>
+          </section>
+
+          <!-- Section 2: AI Suggestions -->
+          <section class="md:col-span-5 flex flex-col gap-6">
+            <div class="bg-surface-container-lowest rounded-xl p-8 shadow-[0px_12px_32px_rgba(25,28,29,0.04)] flex-1 relative overflow-hidden border border-outline-variant/15">
+              <div class="absolute -top-12 -right-12 w-32 h-32 bg-tertiary-container opacity-10 blur-3xl rounded-full"></div>
+              <div class="flex items-center gap-2 mb-6">
+                <span class="material-symbols-outlined text-tertiary" data-icon="auto_awesome">auto_awesome</span>
+                <h3 class="font-headline font-bold text-xl text-on-surface">AI Suggestions</h3>
+              </div>
+              <ul id="suggestionsList" class="space-y-6"></ul>
+            </div>
+          </section>
+
+          <!-- Section 3: Recommended Roles -->
+          <section class="md:col-span-12 mt-4">
+            <div class="flex items-end justify-between mb-8">
+              <div>
+                <h3 class="font-headline font-bold text-2xl text-on-surface mb-2">Recommended Roles</h3>
+                <p class="font-body text-on-surface-variant">Based on your analyzed skills and market growth trends.</p>
+              </div>
+              <button class="bg-surface-container-high text-on-surface-variant px-6 py-2 rounded-full font-label text-xs font-bold uppercase tracking-widest hover:bg-surface-container-highest transition-colors active:scale-95 hidden sm:block">View All</button>
+            </div>
+            <div id="rolesGrid" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div id="tracker-section" class="section">
+      <h2 class="font-headline font-extrabold text-3xl md:text-4xl text-on-surface tracking-tight mb-2">Application
+        Tracker</h2>
+      <p class="font-body text-on-surface-variant mb-10 max-w-2xl">Manage and monitor all your job applications in one
+        organized place. Data is saved securely in your browser.</p>
+
+      <div
+        class="bg-surface-container-lowest p-6 md:p-8 rounded-xl border border-outline-variant/15 shadow-[0px_4px_16px_rgba(25,28,29,0.02)] mb-10 relative">
+        <div class="absolute top-0 left-0 w-1 h-full bg-primary/80 rounded-l-xl"></div>
+        <h3 class="font-headline font-bold text-xl mb-6">Add New Application</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 items-end">
+          <div class="flex flex-col gap-2">
+            <label
+              class="text-[10px] font-label uppercase tracking-widest text-on-surface-variant font-semibold">Company
+              Name</label>
+            <input type="text" id="companyInput"
+              class="bg-surface-container-low border border-transparent rounded-xl px-4 py-3 text-sm focus:ring-0 focus:border-primary transition-colors text-on-surface placeholder:text-outline-variant/80"
+              placeholder="e.g. Google" />
+          </div>
+          <div class="flex flex-col gap-2 relative">
+            <label class="text-[10px] font-label uppercase tracking-widest text-on-surface-variant font-semibold">Job
+              Role</label>
+            <input type="text" id="roleInput"
+              class="bg-surface-container-low border border-transparent rounded-xl px-4 py-3 text-sm focus:ring-0 focus:border-primary transition-colors text-on-surface placeholder:text-outline-variant/80"
+              placeholder="e.g. Frontend Dev" autocomplete="off" />
+            <div id="roleSuggestions"
+              class="absolute top-[100%] left-0 w-full bg-surface-container-lowest border border-outline-variant/15 rounded-xl shadow-[0px_12px_32px_rgba(25,28,29,0.06)] mt-2 overflow-hidden hidden z-50 text-sm max-h-48 overflow-y-auto">
+            </div>
+          </div>
+          <div class="flex flex-col gap-2">
+            <label
+              class="text-[10px] font-label uppercase tracking-widest text-on-surface-variant font-semibold">Status</label>
+            <select id="statusInput"
+              class="bg-surface-container-low border border-transparent rounded-xl px-4 py-3 text-sm focus:ring-0 focus:border-primary transition-colors text-on-surface">
+              <option value="Applied">Applied</option>
+              <option value="Interview">Interview</option>
+              <option value="Offer">Offer 🎉</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+          </div>
+          <button onclick="addApplication()"
+            class="bg-gradient-to-br from-primary to-primary-container text-on-primary h-[46px] rounded-xl font-bold shadow-md shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all text-sm w-full">
+            Add Application
+          </button>
+        </div>
+      </div>
+
+      <div id="statsRow" class="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-10"></div>
+
+      <div id="appList" class="space-y-4"></div>
+
+      <div id="emptyTracker"
+        class="bg-surface-container-lowest border border-outline-variant/15 p-12 md:p-24 rounded-xl text-center hidden shadow-sm">
+        <div class="w-20 h-20 bg-surface-container-low rounded-full flex items-center justify-center mb-6 mx-auto">
+          <span class="material-symbols-outlined text-4xl text-outline-variant/80">inbox</span>
+        </div>
+        <p class="font-body text-lg text-on-surface-variant">No applications yet. Start tracking your job hunt!</p>
+      </div>
+    </div>
+  </main>
+
+  <nav
+    class="md:hidden fixed bottom-0 w-full z-50 rounded-t-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-[0px_-4px_20px_rgba(0,0,0,0.05)] flex justify-around items-center h-20 px-4 pb-safe w-full">
+    <a class="nav-link flex-1 active" onclick="showSection('upload-section', this)" href="#">
+      <span class="material-symbols-outlined text-[26px]">home</span>
+      <span class="font-inter text-[10px] font-semibold uppercase tracking-widest mt-0.5">Home</span>
+    </a>
+    <a class="nav-link flex-1 text-slate-400 hover:text-blue-500 transition-colors"
+      onclick="showSection('results-section', this)" href="#">
+      <span class="material-symbols-outlined text-[26px]">analytics</span>
+      <span class="font-inter text-[10px] font-semibold uppercase tracking-widest mt-0.5">Results</span>
+    </a>
+    <a class="nav-link flex-1 text-slate-400 hover:text-blue-500 transition-colors"
+      onclick="showSection('tracker-section', this)" href="#">
+      <span class="material-symbols-outlined text-[26px]">assignment_turned_in</span>
+      <span class="font-inter text-[10px] font-semibold uppercase tracking-widest mt-0.5">Tracker</span>
+    </a>
+  </nav>
+
+  <footer class="mt-auto pt-12 pb-32 md:pb-12 px-6 max-w-7xl mx-auto text-center">
+    <p class="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant opacity-60">
+      © 2024 The Academic Curator · Designed for the Modern Student
+    </p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+
+</html>
