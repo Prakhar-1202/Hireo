@@ -6,7 +6,16 @@
 // ─────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────
-const API_URL = "http://localhost:5000/analyze";  // Flask backend
+const API_URL = "http://127.0.0.1:5000/analyze";
+
+/** Target role for AI analysis (optional #targetRole in HTML overrides). */
+const DEFAULT_TARGET_ROLE = "Software Developer";
+
+function getTargetRole() {
+  const el = document.getElementById("targetRole");
+  const v = el && typeof el.value === "string" ? el.value.trim() : "";
+  return v || DEFAULT_TARGET_ROLE;
+}
 
 // ─────────────────────────────────────────────
 // SECTION NAVIGATION
@@ -155,33 +164,41 @@ async function analyzeResume() {
   hideError();
   showLoader(true);
 
-  // MOCK DELAY (Testing Flow Without Backend)
-  setTimeout(() => {
-    // Hidden loading state
+  // ── Real API call to Flask backend ──
+  const role = getTargetRole();
+
+  try {
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, role }),
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      if (errData.detail) console.error("Server detail:", errData.detail);
+      const msg = errData.error || `Server error ${response.status}`;
+      throw new Error(msg);
+    }
+
+    const data = await response.json();
+    console.log("API response:", data);
+
     showLoader(false);
-
-    // Mock Payload with expanded analytics
-    const mockData = {
-      score: 85,
-      skills: ["Python", "SQL", "Project Management", "Figma", "Data Visualization", "User Research", "A/B Testing", "React.js"],
-      missingSkills: ["Cloud Platforms", "CI/CD", "Docker"],
-      strengths: ["Clear quantitative results (40% increase in X)", "Strong cross-functional collaboration", "Solid foundation in analytical tools"],
-      suggestions: [
-        { title: "Add quantifiable results", desc: "Mention how Python reduced task time by X% in your last project.", icon: "trending_up" },
-        { title: "Focus on leadership", desc: "Highlight your role leading the university design guild.", icon: "groups" },
-        { title: "Portfolio Integration", desc: "Embed your Figma case studies directly into your profile summary.", icon: "link" }
-      ],
-      roles: [
-        { role: "Junior Data Analyst", industry: "FinTech & E-commerce", match: 94, status: "Applied", icon: "analytics", bgClass: "bg-primary-fixed", textClass: "text-on-primary-fixed", statusClass: "bg-surface-container text-primary" },
-        { role: "Product Intern", industry: "SaaS & Consumer Apps", match: 88, status: "Interview", icon: "shopping_bag", bgClass: "bg-secondary-fixed", textClass: "text-on-secondary-fixed", statusClass: "bg-surface-container-highest text-secondary" },
-        { role: "UX Designer", industry: "Design Agencies", match: 82, status: "Recommended", icon: "brush", bgClass: "bg-tertiary-fixed", textClass: "text-on-tertiary-fixed", statusClass: "bg-surface-container text-on-surface-variant" }
-      ]
-    };
-
-    displayResults(mockData);
+    displayResults(data);
     showSection("results-section");
 
-  }, 2000);
+  } catch (err) {
+    showLoader(false);
+    if (err.message.includes("Failed to fetch") || err.message.includes("NetworkError") || err.message.includes("Load failed")) {
+      showError("⚠️ Cannot reach the backend. Make sure Flask is running: python app.py (port 5000)");
+    } else if (err.message === "AI analysis failed") {
+      showError("AI analysis failed");
+    } else {
+      showError("Error: " + err.message);
+    }
+    return;
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -200,24 +217,31 @@ function displayResults(data) {
   resultsContent.style.display = "block";
   resultsContent.hidden = false; // Cleanup native attribute if present
 
+  const skills = Array.isArray(data.skills) ? data.skills : [];
+  const missingSkills = Array.isArray(data.missingSkills) ? data.missingSkills : [];
+  const strengths = Array.isArray(data.strengths) ? data.strengths : [];
+  const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+  const roles = Array.isArray(data.roles) ? data.roles : [];
+
   // ── Score ──
-  document.getElementById("resumeScoreDisplay").textContent = data.score;
+  document.getElementById("resumeScoreDisplay").textContent =
+    data.score != null ? String(data.score) : "—";
 
   // ── Skills ──
   const skillsGrid = document.getElementById("skillsGrid");
-  skillsGrid.innerHTML = data.skills.map((skill, i) => 
+  skillsGrid.innerHTML = skills.map((skill, i) => 
     `<span class="bg-secondary-container text-on-secondary-container px-4 py-2 rounded-full font-label text-sm font-medium" style="animation-delay: ${i * 0.05}s">${skill}</span>`
   ).join("");
 
   // ── Missing Skills ──
   const missingGrid = document.getElementById("missingSkillsGrid");
-  missingGrid.innerHTML = data.missingSkills.map((skill, i) => 
+  missingGrid.innerHTML = missingSkills.map((skill, i) => 
     `<span class="bg-error-container/50 text-on-error-container px-3 py-1 rounded-full font-label text-xs font-semibold" style="animation-delay: ${i * 0.05}s">${skill}</span>`
   ).join("");
 
   // ── Strengths ──
   const strengthsList = document.getElementById("strengthsList");
-  strengthsList.innerHTML = data.strengths.map((str, i) => 
+  strengthsList.innerHTML = strengths.map((str, i) => 
     `<li class="flex items-start gap-2" style="animation-delay: ${i * 0.05}s">
         <span class="material-symbols-outlined text-secondary text-base shrink-0 mt-0.5">check_circle</span>
         <span class="font-body text-sm text-on-surface-variant leading-snug">${str}</span>
@@ -226,33 +250,44 @@ function displayResults(data) {
 
   // ── Suggestions ──
   const suggList = document.getElementById("suggestionsList");
-  suggList.innerHTML = data.suggestions.map((sugg, i) => 
-    `<li class="flex gap-4" style="animation-delay: ${i * 0.07}s">
+  suggList.innerHTML = suggestions.map((sugg, i) => {
+    const icon = (sugg && sugg.icon) ? sugg.icon : "auto_awesome";
+    const title = (sugg && sugg.title) ? sugg.title : "Suggestion";
+    const desc = (sugg && sugg.desc) ? sugg.desc : "";
+    return `<li class="flex gap-4" style="animation-delay: ${i * 0.07}s">
       <div class="flex-shrink-0 w-8 h-8 rounded-full bg-tertiary-fixed flex items-center justify-center">
-        <span class="material-symbols-outlined text-on-tertiary-fixed text-sm" data-icon="${sugg.icon}">${sugg.icon}</span>
+        <span class="material-symbols-outlined text-on-tertiary-fixed text-sm" data-icon="${icon}">${icon}</span>
       </div>
       <div>
-        <h4 class="font-headline font-bold text-sm text-on-surface mb-1">${sugg.title}</h4>
-        <p class="font-body text-sm text-on-surface-variant leading-relaxed">${sugg.desc}</p>
+        <h4 class="font-headline font-bold text-sm text-on-surface mb-1">${title}</h4>
+        <p class="font-body text-sm text-on-surface-variant leading-relaxed">${desc}</p>
       </div>
-    </li>`
-  ).join("");
+    </li>`;
+  }).join("");
 
   // ── Roles ──
   const rolesGrid = document.getElementById("rolesGrid");
-  rolesGrid.innerHTML = data.roles.map((job, i) => 
-    `<div class="bg-surface-container-lowest rounded-xl p-6 shadow-[0px_12px_32px_rgba(25,28,29,0.04)] hover:shadow-[0px_16px_40px_rgba(25,28,29,0.08)] transition-all group cursor-pointer" style="animation-delay: ${i * 0.06}s">
-      <div class="w-12 h-12 ${job.bgClass} rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-        <span class="material-symbols-outlined ${job.textClass}">${job.icon}</span>
+  rolesGrid.innerHTML = roles.map((job, i) => {
+    const bgClass = job.bgClass || "bg-primary-fixed";
+    const textClass = job.textClass || "text-on-primary-fixed";
+    const statusClass = job.statusClass || "bg-surface-container text-primary";
+    const jRole = job.role || "Role";
+    const industry = job.industry || "";
+    const icon = job.icon || "work";
+    const status = job.status || "Recommended";
+    const match = job.match != null ? job.match : "—";
+    return `<div class="bg-surface-container-lowest rounded-xl p-6 shadow-[0px_12px_32px_rgba(25,28,29,0.04)] hover:shadow-[0px_16px_40px_rgba(25,28,29,0.08)] transition-all group cursor-pointer" style="animation-delay: ${i * 0.06}s">
+      <div class="w-12 h-12 ${bgClass} rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+        <span class="material-symbols-outlined ${textClass}">${icon}</span>
       </div>
-      <h4 class="font-headline font-bold text-lg text-on-surface mb-1">${job.role}</h4>
-      <p class="font-body text-on-surface-variant text-sm mb-4">${job.industry}</p>
+      <h4 class="font-headline font-bold text-lg text-on-surface mb-1">${jRole}</h4>
+      <p class="font-body text-on-surface-variant text-sm mb-4">${industry}</p>
       <div class="flex items-center gap-2">
-        <span class="${job.statusClass} text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded">${job.status}</span>
-        <span class="text-xs text-outline font-medium">${job.match}% Match</span>
+        <span class="${statusClass} text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded">${status}</span>
+        <span class="text-xs text-outline font-medium">${match}% Match</span>
       </div>
-    </div>`
-  ).join("");
+    </div>`;
+  }).join("");
 }
 
 // ─────────────────────────────────────────────

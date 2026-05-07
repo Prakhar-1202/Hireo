@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-  <title>The Academic Curator - AI Job Assistant</title>
+  <title>Hireo - Resume analyzer</title>
   <link
     href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap"
     rel="stylesheet" />
@@ -47,11 +47,10 @@
     class="fixed top-0 w-full z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md shadow-sm dark:shadow-none flex items-center justify-between px-6 py-4">
     <div class="flex items-center gap-3">
       <div
-        class="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-on-primary-fixed overflow-hidden">
-        <span class="material-symbols-outlined pb-1">school</span>
+        class="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center overflow-hidden shrink-0">
+        <img src="assets/logo-hireo.png" alt="Hireo" width="36" height="36" class="w-9 h-9 object-contain" />
       </div>
-      <span class="font-manrope font-extrabold text-blue-600 dark:text-blue-400 tracking-tighter text-lg">The Academic
-        Curator</span>
+      <span class="font-manrope font-extrabold text-blue-600 dark:text-blue-400 tracking-tighter text-lg">Hireo</span>
     </div>
     <nav class="hidden md:flex gap-8 items-center">
       <a class="nav-link font-inter text-[11px] font-semibold uppercase tracking-widest text-slate-500 hover:text-blue-500 transition-colors cursor-pointer active"
@@ -69,7 +68,7 @@
     <div id="upload-section" class="section active">
       <section class="mb-16 text-center md:text-left max-w-3xl">
         <h1 class="font-headline font-extrabold text-4xl md:text-6xl text-on-surface tracking-tight leading-[1.1] mb-6">
-          AI Job Assistant <span class="text-primary">(Lite)</span>
+          Resume analyzer
         </h1>
         <p class="font-body text-lg md:text-xl text-on-surface-variant leading-relaxed">
           Your AI-powered tool for landing your dream job. Upload your resume and let's get started on optimizing your
@@ -80,19 +79,19 @@
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <div
           class="lg:col-span-8 bg-surface-container-lowest p-8 md:p-12 rounded-xl shadow-[0px_12px_32px_rgba(25,28,29,0.06)] relative z-10">
-          <div id="dropZone"
-            class="relative group border-2 border-dashed border-outline-variant/30 rounded-xl hover:border-primary/50 transition-all duration-300 p-8 md:p-16 flex flex-col items-center justify-center text-center bg-surface-container-low/20">
-            <div class="w-16 h-16 bg-primary-fixed flex items-center justify-center rounded-full mb-6">
+          <label id="dropZone" for="fileInput"
+            class="relative group border-2 border-dashed border-outline-variant/30 rounded-xl hover:border-primary/50 transition-all duration-300 p-8 md:p-16 flex flex-col items-center justify-center text-center bg-surface-container-low/20 cursor-pointer">
+            <div class="w-16 h-16 bg-primary-fixed flex items-center justify-center rounded-full mb-6 pointer-events-none">
               <span class="material-symbols-outlined text-primary text-3xl" data-icon="upload">upload</span>
             </div>
-            <h3 class="font-headline font-bold text-xl mb-2">Drag and drop your resume</h3>
-            <p class="font-body text-on-surface-variant mb-8">PDF or TXT</p>
-            <label for="fileInput"
-              class="bg-surface-container-highest px-8 py-3 rounded-full font-semibold text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 cursor-pointer">
+            <h3 class="font-headline font-bold text-xl mb-2 pointer-events-none">Drag and drop your resume</h3>
+            <p class="font-body text-on-surface-variant mb-8 pointer-events-none">PDF or TXT</p>
+            <span
+              class="bg-surface-container-highest px-8 py-3 rounded-full font-semibold text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 pointer-events-none">
               Browse Files
-            </label>
+            </span>
             <input type="file" id="fileInput" accept=".txt,.pdf" class="hidden" />
-          </div>
+          </label>
 
           <div class="mt-8">
             <div
@@ -385,7 +384,7 @@
 
   <footer class="mt-auto pt-12 pb-32 md:pb-12 px-6 max-w-7xl mx-auto text-center">
     <p class="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant opacity-60">
-      © 2024 The Academic Curator · Designed for the Modern Student
+      © 2026 Hireo · Designed for the Modern Student
     </p>
   </footer>
 
