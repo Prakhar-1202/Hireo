@@ -78,4 +78,4 @@ if __name__ == "__main__":
     print("    Set GEMINI_API_KEY (e.g. in .env). Prefer package: google-genai")
     print("    Debug: SHOW_AI_ERROR_DETAIL=1 to include `detail` in 502 JSON")
     print("    API: http://127.0.0.1:5000/analyze\n")
-    app.run(debug=True, host="127.0.0.1", port=int(os.getenv("PORT", "5000")))
+    app.run(debug=False, host="0.0.0.0", port=int(os.getenv("PORT", "5000")))
