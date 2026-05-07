@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────
-const API_URL = "http://127.0.0.1:5000/analyze";
+const API_URL = "https://hireo-1-9x6m.onrender.com/analyze";
 
 /** Target role for AI analysis (optional #targetRole in HTML overrides). */
 const DEFAULT_TARGET_ROLE = "Software Developer";
