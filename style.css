@@ -1,0 +1,52 @@
+/* AI JOB ASSISTANT LITE — STYLESHEET */
+
+.section { display: none; animation: fadeUp 0.4s ease-out forwards; }
+.section.active { display: block; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Material Icons configuration */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Desktop Nav Links */
+.md\:flex .nav-link.active {
+  color: #0050cb;
+}
+
+/* Mobile Nav Links */
+.md\:hidden .nav-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1rem;
+    border-radius: 0.75rem;
+}
+.md\:hidden .nav-link.active {
+  color: #0050cb;
+  background-color: #f0f4fc; /* subtle highlight */
+}
+.md\:hidden .nav-link.active .material-symbols-outlined {
+  font-variation-settings: 'FILL' 1;
+}
+
+/* Scrollbar tweaks */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent; 
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.1); 
+    border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.2); 
+}
