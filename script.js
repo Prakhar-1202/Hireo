@@ -167,12 +167,22 @@ async function analyzeResume() {
   // ── Real API call to Flask backend ──
   const role = getTargetRole();
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
   try {
+    btn.disabled = true;
+    btn.textContent = "Analyzing...";
     const response = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, role }),
+      signal: controller.signal,
+      btn.disabled = false;
+btn.innerHTML = '<span class="material-symbols-outlined">analytics</span> Analyze Resume';
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
@@ -189,7 +199,13 @@ async function analyzeResume() {
     showSection("results-section");
 
   } catch (err) {
+    clearTimeout(timeoutId);
     showLoader(false);
+    if (err.name === "AbortError") {
+      showError("⏱️ AI is taking too long. Please try again in a moment.");
+      showError("Request timed out after 30 seconds.");
+      return;
+    }
     if (err.message.includes("Failed to fetch") || err.message.includes("NetworkError") || err.message.includes("Load failed")) {
       showError("⚠️ Cannot reach the backend. Make sure Flask is running: python app.py (port 5000)");
     } else if (err.message === "AI analysis failed") {
