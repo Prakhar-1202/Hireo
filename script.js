@@ -157,10 +157,16 @@ function displayResults(data) {
   if (scoreEl) scoreEl.textContent = data.score ?? 0;
 
   // Show/hide sections
+    // Show/hide sections
   const noResults = document.getElementById("no-results");
   const resultsContent = document.getElementById("results-content");
-  if (noResults) noResults.hidden = true;
-  if (resultsContent) resultsContent.hidden = false;
+  if (noResults) {
+    noResults.style.display = "none";
+  }
+  if (resultsContent) {
+    resultsContent.style.display = "block";
+    resultsContent.removeAttribute("hidden");
+  }
 
   // Skills
   const skillsGrid = document.getElementById("skillsGrid");
