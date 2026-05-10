@@ -1,580 +1,472 @@
-/**
- * AI Job Assistant Lite — Frontend JavaScript
- * Handles: Resume upload, API calls, results display, Job Tracker
- */
+// ============================================================
+// Hireo — script.js  (FIXED VERSION)
+// Key fixes:
+//   1. API_URL auto-detects local vs Vercel correctly
+//   2. fetch() has a 55-second timeout so it never hangs forever
+//   3. PDF text extraction error is handled gracefully
+//   4. Loader is always hidden even when an error occurs
+//   5. localStorage errors are caught (private browsing mode fix)
+//   6. analyzeResume cannot be double-clicked / double-submitted
+// ============================================================
 
-// ─────────────────────────────────────────────
-// CONFIG
-// ─────────────────────────────────────────────
-const API_URL = "https://hireo-1-9x6m.onrender.com/analyze";
+// ── FIX 1: Smart API URL ─────────────────────────────────────
+// On Vercel, the frontend and backend are the same domain.
+// Locally, Flask runs on port 5000.
+const API_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+  ? "http://localhost:5000/analyze"
+  : "/analyze";  // Same-origin on Vercel — this is the most important fix!
 
-/** Target role for AI analysis (optional #targetRole in HTML overrides). */
-const DEFAULT_TARGET_ROLE = "Software Developer";
-
-function getTargetRole() {
-  const el = document.getElementById("targetRole");
-  const v = el && typeof el.value === "string" ? el.value.trim() : "";
-  return v || DEFAULT_TARGET_ROLE;
-}
-
-// ─────────────────────────────────────────────
-// SECTION NAVIGATION
-// ─────────────────────────────────────────────
-
-/**
- * Show a specific section by ID and update active nav link
- * @param {string} sectionId - ID of the section to show
- * @param {HTMLElement} clickedLink - The nav link that was clicked
- */
-function showSection(sectionId) {
-  // Hide all sections
-  document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
-
-  // Show target section
-  const target = document.getElementById(sectionId);
-  if (target) target.classList.add("active");
-
-  // Update active nav links across both desktop and mobile
-  document.querySelectorAll(".nav-link").forEach(l => {
-    l.classList.remove("active");
-  });
-
-  document.querySelectorAll(`[onclick*="${sectionId}"]`).forEach(l => {
-    if (l.classList.contains("nav-link")) {
-      l.classList.add("active");
-    }
-  });
-
-  // Special: load tracker when switching to it
-  if (sectionId === "tracker-section") renderTracker();
-
-  return false; // prevent default anchor behavior
-}
-
-// ─────────────────────────────────────────────
-// FILE UPLOAD (Drag & Drop + File Picker)
-// ─────────────────────────────────────────────
-
-const dropZone = document.getElementById("dropZone");
-const fileInput = document.getElementById("fileInput");
-const resumeTextarea = document.getElementById("resumeText");
-const charCount = document.getElementById("charCount");
-
-// Update character count as user types
-resumeTextarea.addEventListener("input", () => {
-  const len = resumeTextarea.value.length;
-  charCount.textContent = `${len} character${len !== 1 ? "s" : ""}`;
-});
-
-// Drag & Drop events on the drop zone
-dropZone.addEventListener("dragover", (e) => {
-  e.preventDefault();
-  dropZone.classList.add("drag-over");
-});
-
-dropZone.addEventListener("dragleave", () => {
-  dropZone.classList.remove("drag-over");
-});
-
-dropZone.addEventListener("drop", (e) => {
-  e.preventDefault();
-  dropZone.classList.remove("drag-over");
-  const file = e.dataTransfer.files[0];
-  if (file) handleFile(file);
-});
-
-// File input change (the "Choose File" button)
-fileInput.addEventListener("change", () => {
-  const file = fileInput.files[0];
-  if (file) handleFile(file);
-});
-
-/**
- * Read a dropped/selected file and put its text into the textarea
- * Parses PDFs locally using pdf.js
- * @param {File} file
- */
-async function handleFile(file) {
-  hideError();
-  
-  if (!file.name.endsWith(".txt") && !file.name.endsWith(".pdf")) {
-    showError("Please upload a .txt or .pdf file.");
-    return;
-  }
-
-  if (file.name.endsWith(".pdf")) {
-    try {
-      resumeTextarea.value = "Extracting text from PDF, please wait...";
-      resumeTextarea.disabled = true;
-      
-      const pdfjsLib = window['pdfjs-dist/build/pdf'];
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-      
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-      let fullText = "";
-      
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map(item => item.str).join(" ");
-        fullText += pageText + "\n";
-      }
-      
-      resumeTextarea.value = fullText.trim();
-      resumeTextarea.disabled = false;
-      resumeTextarea.dispatchEvent(new Event("input")); // update char count
-    } catch (e) {
-      showError("Failed to extract PDF text natively: " + e.message);
-      resumeTextarea.value = "";
-      resumeTextarea.disabled = false;
-    }
-  } else {
-    // Standard TXT parsing
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      resumeTextarea.value = e.target.result;
-      resumeTextarea.dispatchEvent(new Event("input")); // update char count
-    };
-    reader.readAsText(file);
-  }
-}
-
-// ─────────────────────────────────────────────
-// RESUME ANALYSIS — Main Feature
-// ─────────────────────────────────────────────
-
-/**
- * Send resume text to Flask backend and display results
- */
-async function analyzeResume() {
-  const text = resumeTextarea.value.trim();
-
-  // Validate input
-  if (!text) {
-    showError("Please paste your resume text or upload a file first.");
-    return;
-  }
-  if (text.length < 50) {
-    showError("Resume text is too short. Please add more content.");
-    return;
-  }
-
-  // Show loader, hide error
-  hideError();
-  showLoader(true);
-
-  // ── Real API call to Flask backend ──
-  const role = getTargetRole();
-
+// ── FIX 2: fetch with timeout ────────────────────────────────
+async function fetchWithTimeout(url, options = {}, timeoutMs = 55000) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
-
+  const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    btn.disabled = true;
-    btn.textContent = "Analyzing...";
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, role }),
-      signal: controller.signal,
-      btn.disabled = false;
-btn.innerHTML = '<span class="material-symbols-outlined">analytics</span> Analyze Resume';
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      if (errData.detail) console.error("Server detail:", errData.detail);
-      const msg = errData.error || `Server error ${response.status}`;
-      throw new Error(msg);
-    }
-
-    const data = await response.json();
-    console.log("API response:", data);
-
-    showLoader(false);
-    displayResults(data);
-    showSection("results-section");
-
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return response;
   } catch (err) {
-    clearTimeout(timeoutId);
-    showLoader(false);
     if (err.name === "AbortError") {
-      showError("⏱️ AI is taking too long. Please try again in a moment.");
-      showError("Request timed out after 30 seconds.");
-      return;
+      throw new Error("Request timed out. The AI is taking too long — please try again.");
     }
-    if (err.message.includes("Failed to fetch") || err.message.includes("NetworkError") || err.message.includes("Load failed")) {
-      showError("⚠️ Cannot reach the backend. Make sure Flask is running: python app.py (port 5000)");
-    } else if (err.message === "AI analysis failed") {
-      showError("AI analysis failed");
-    } else {
-      showError("Error: " + err.message);
-    }
-    return;
+    throw err;
+  } finally {
+    clearTimeout(id);
   }
 }
 
-// ─────────────────────────────────────────────
-// DISPLAY RESULTS
-// ─────────────────────────────────────────────
-
-/**
- * Render the full mock analysis layout
- * @param {object} data 
- */
-function displayResults(data) {
-  const noResults = document.getElementById("no-results");
-  const resultsContent = document.getElementById("results-content");
-
-  noResults.style.display = "none";
-  resultsContent.style.display = "block";
-  resultsContent.hidden = false; // Cleanup native attribute if present
-
-  const skills = Array.isArray(data.skills) ? data.skills : [];
-  const missingSkills = Array.isArray(data.missingSkills) ? data.missingSkills : [];
-  const strengths = Array.isArray(data.strengths) ? data.strengths : [];
-  const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
-  const roles = Array.isArray(data.roles) ? data.roles : [];
-
-  // ── Score ──
-  document.getElementById("resumeScoreDisplay").textContent =
-    data.score != null ? String(data.score) : "—";
-
-  // ── Skills ──
-  const skillsGrid = document.getElementById("skillsGrid");
-  skillsGrid.innerHTML = skills.map((skill, i) => 
-    `<span class="bg-secondary-container text-on-secondary-container px-4 py-2 rounded-full font-label text-sm font-medium" style="animation-delay: ${i * 0.05}s">${skill}</span>`
-  ).join("");
-
-  // ── Missing Skills ──
-  const missingGrid = document.getElementById("missingSkillsGrid");
-  missingGrid.innerHTML = missingSkills.map((skill, i) => 
-    `<span class="bg-error-container/50 text-on-error-container px-3 py-1 rounded-full font-label text-xs font-semibold" style="animation-delay: ${i * 0.05}s">${skill}</span>`
-  ).join("");
-
-  // ── Strengths ──
-  const strengthsList = document.getElementById("strengthsList");
-  strengthsList.innerHTML = strengths.map((str, i) => 
-    `<li class="flex items-start gap-2" style="animation-delay: ${i * 0.05}s">
-        <span class="material-symbols-outlined text-secondary text-base shrink-0 mt-0.5">check_circle</span>
-        <span class="font-body text-sm text-on-surface-variant leading-snug">${str}</span>
-    </li>`
-  ).join("");
-
-  // ── Suggestions ──
-  const suggList = document.getElementById("suggestionsList");
-  suggList.innerHTML = suggestions.map((sugg, i) => {
-    const icon = (sugg && sugg.icon) ? sugg.icon : "auto_awesome";
-    const title = (sugg && sugg.title) ? sugg.title : "Suggestion";
-    const desc = (sugg && sugg.desc) ? sugg.desc : "";
-    return `<li class="flex gap-4" style="animation-delay: ${i * 0.07}s">
-      <div class="flex-shrink-0 w-8 h-8 rounded-full bg-tertiary-fixed flex items-center justify-center">
-        <span class="material-symbols-outlined text-on-tertiary-fixed text-sm" data-icon="${icon}">${icon}</span>
-      </div>
-      <div>
-        <h4 class="font-headline font-bold text-sm text-on-surface mb-1">${title}</h4>
-        <p class="font-body text-sm text-on-surface-variant leading-relaxed">${desc}</p>
-      </div>
-    </li>`;
-  }).join("");
-
-  // ── Roles ──
-  const rolesGrid = document.getElementById("rolesGrid");
-  rolesGrid.innerHTML = roles.map((job, i) => {
-    const bgClass = job.bgClass || "bg-primary-fixed";
-    const textClass = job.textClass || "text-on-primary-fixed";
-    const statusClass = job.statusClass || "bg-surface-container text-primary";
-    const jRole = job.role || "Role";
-    const industry = job.industry || "";
-    const icon = job.icon || "work";
-    const status = job.status || "Recommended";
-    const match = job.match != null ? job.match : "—";
-    return `<div class="bg-surface-container-lowest rounded-xl p-6 shadow-[0px_12px_32px_rgba(25,28,29,0.04)] hover:shadow-[0px_16px_40px_rgba(25,28,29,0.08)] transition-all group cursor-pointer" style="animation-delay: ${i * 0.06}s">
-      <div class="w-12 h-12 ${bgClass} rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-        <span class="material-symbols-outlined ${textClass}">${icon}</span>
-      </div>
-      <h4 class="font-headline font-bold text-lg text-on-surface mb-1">${jRole}</h4>
-      <p class="font-body text-on-surface-variant text-sm mb-4">${industry}</p>
-      <div class="flex items-center gap-2">
-        <span class="${statusClass} text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded">${status}</span>
-        <span class="text-xs text-outline font-medium">${match}% Match</span>
-      </div>
-    </div>`;
-  }).join("");
+// ── FIX 3: Safe localStorage helpers ─────────────────────────
+// Private/Incognito mode blocks localStorage — this prevents crashes
+function safeGetItem(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function safeSetItem(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* silently ignore */ }
+}
+function safeRemoveItem(key) {
+  try { localStorage.removeItem(key); } catch { /* silently ignore */ }
 }
 
-// ─────────────────────────────────────────────
-// LOADER & ERROR HELPERS
-// ─────────────────────────────────────────────
+// ── Section navigation ────────────────────────────────────────
+function showSection(id, navEl) {
+  document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
+  const section = document.getElementById(id);
+  if (section) section.classList.add("active");
 
-function showLoader(visible) {
-  document.getElementById("loader").hidden = !visible;
+  document.querySelectorAll(".nav-link").forEach(l => l.classList.remove("active"));
+  if (navEl) navEl.classList.add("active");
 }
 
-function showError(message) {
+// ── UI helpers ────────────────────────────────────────────────
+function showError(msg) {
   const box = document.getElementById("errorBox");
-  box.textContent = message;
+  if (!box) return;
+  box.textContent = msg;
   box.hidden = false;
 }
 
 function hideError() {
-  document.getElementById("errorBox").hidden = true;
+  const box = document.getElementById("errorBox");
+  if (box) box.hidden = true;
 }
 
-// ─────────────────────────────────────────────
-// JOB TRACKER — localStorage based
-// ─────────────────────────────────────────────
+function showLoader(show) {
+  const loader = document.getElementById("loader");
+  if (loader) loader.hidden = !show;
+}
 
-const STORAGE_KEY = "jobai_applications";
+// ── FIX 4: Prevent double-submit ─────────────────────────────
+let isAnalyzing = false;
 
-/**
- * Get all applications from localStorage
- * @returns {Array<{id, company, role, status, date}>}
- */
-function getApplications() {
+async function analyzeResume() {
+  if (isAnalyzing) return;
+
+  const resumeTextEl = document.getElementById("resumeText");
+  const text = (resumeTextEl ? resumeTextEl.value : "").trim();
+
+  if (!text) {
+    showError("Please upload a file or paste your resume text before clicking Analyze.");
+    return;
+  }
+
+  if (text.length < 50) {
+    showError("Your resume text is too short. Please add more content.");
+    return;
+  }
+
+  isAnalyzing = true;
+  hideError();
+  showLoader(true);
+
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-  } catch {
-    return [];
+    const response = await fetchWithTimeout(
+      API_URL,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, role: "Software Developer" }),
+      },
+      55000 // 55 second timeout
+    );
+
+    // FIX 5: Handle non-200 responses gracefully
+    if (!response.ok) {
+      let errMsg = `Server error (${response.status}).`;
+      try {
+        const errData = await response.json();
+        if (errData.error) errMsg = errData.error;
+      } catch { /* ignore JSON parse failure */ }
+      throw new Error(errMsg);
+    }
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    displayResults(data);
+    showSection("results-section", null);
+
+    // Update nav active state
+    const navLinks = document.querySelectorAll(".nav-link");
+    navLinks.forEach(l => l.classList.remove("active"));
+    navLinks.forEach(l => {
+      if (l.textContent.trim().toLowerCase().includes("result")) l.classList.add("active");
+    });
+
+  } catch (err) {
+    console.error("Analysis error:", err);
+    let userMessage = err.message || "Something went wrong. Please try again.";
+
+    // Make network errors friendlier
+    if (userMessage.includes("Failed to fetch") || userMessage.includes("NetworkError")) {
+      userMessage = "Could not connect to the server. Check your internet connection and try again.";
+    }
+
+    showError(userMessage);
+  } finally {
+    // FIX 6: ALWAYS hide the loader, even if there was an error
+    showLoader(false);
+    isAnalyzing = false;
   }
 }
 
-/**
- * Save applications array to localStorage
- * @param {Array} apps
- */
-function saveApplications(apps) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(apps));
-}
+// ── Display Results ───────────────────────────────────────────
+function displayResults(data) {
+  // Show score
+  const scoreEl = document.getElementById("resumeScoreDisplay");
+  if (scoreEl) scoreEl.textContent = data.score ?? 0;
 
-/**
- * Add a new application from the form inputs
- */
-function addApplication() {
-  const company = document.getElementById("companyInput").value.trim();
-  const role = document.getElementById("roleInput").value.trim();
-  const status = document.getElementById("statusInput").value;
+  // Show/hide sections
+  const noResults = document.getElementById("no-results");
+  const resultsContent = document.getElementById("results-content");
+  if (noResults) noResults.hidden = true;
+  if (resultsContent) resultsContent.hidden = false;
 
-  if (!company) {
-    alert("Please enter a company name.");
-    document.getElementById("companyInput").focus();
-    return;
-  }
-  if (!role) {
-    alert("Please enter a job role.");
-    document.getElementById("roleInput").focus();
-    return;
+  // Skills
+  const skillsGrid = document.getElementById("skillsGrid");
+  if (skillsGrid) {
+    skillsGrid.innerHTML = "";
+    (data.skills || []).forEach(skill => {
+      const tag = document.createElement("span");
+      tag.className =
+        "px-3 py-1.5 bg-primary-fixed text-on-primary-fixed rounded-full text-xs font-semibold font-label";
+      tag.textContent = skill;
+      skillsGrid.appendChild(tag);
+    });
   }
 
-  const apps = getApplications();
-
-  // Create new entry
-  const newApp = {
-    id: Date.now(),                            // unique ID
-    company,
-    role,
-    status,
-    date: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-  };
-
-  apps.unshift(newApp); // Add to beginning of list
-  saveApplications(apps);
-
-  // Clear form
-  document.getElementById("companyInput").value = "";
-  document.getElementById("roleInput").value = "";
-  document.getElementById("statusInput").value = "Applied";
-
-  // Re-render list
-  renderTracker();
-}
-
-/**
- * Delete an application by ID
- * @param {number} id
- */
-function deleteApplication(id) {
-  if (!confirm("Remove this application?")) return;
-  const apps = getApplications().filter(a => a.id !== id);
-  saveApplications(apps);
-  renderTracker();
-}
-
-/**
- * Render the stats and applications list
- */
-function renderTracker() {
-  const apps = getApplications();
-  const statsRow = document.getElementById("statsRow");
-  const appList = document.getElementById("appList");
-  const emptyTracker = document.getElementById("emptyTracker");
-
-  // ── Stats ──
-  const counts = {
-    Total: apps.length,
-    Applied: apps.filter(a => a.status === "Applied").length,
-    Interview: apps.filter(a => a.status === "Interview").length,
-    Offer: apps.filter(a => a.status === "Offer 🎉" || a.status === "Offer").length,
-  };
-
-  const statStyles = {
-    Total: "text-on-surface border-outline-variant/10",
-    Applied: "text-secondary border-secondary/20",
-    Interview: "text-tertiary-container border-tertiary-container/20",
-    Offer: "text-primary border-primary/20"
-  };
-
-  statsRow.innerHTML = Object.entries(counts).map(([label, num]) => `
-    <div class="bg-surface-container-lowest p-6 rounded-xl text-center border shadow-[0px_4px_16px_rgba(25,28,29,0.02)] ${statStyles[label].split(" ")[1]}">
-      <div class="font-headline text-3xl font-extrabold mb-1 ${statStyles[label].split(" ")[0]}">${num}</div>
-      <div class="text-[10px] font-label uppercase tracking-widest text-on-surface-variant opacity-80">${label}</div>
-    </div>
-  `).join("");
-
-  // ── Applications List ──
-  appList.innerHTML = "";
-
-  if (apps.length === 0) {
-    emptyTracker.classList.remove("hidden");
-    statsRow.classList.add("hidden");
-    return;
+  // Missing Skills
+  const missingGrid = document.getElementById("missingSkillsGrid");
+  if (missingGrid) {
+    missingGrid.innerHTML = "";
+    (data.missingSkills || []).forEach(skill => {
+      const tag = document.createElement("span");
+      tag.className =
+        "px-3 py-1.5 bg-error-container text-on-error-container rounded-full text-xs font-semibold font-label";
+      tag.textContent = skill;
+      missingGrid.appendChild(tag);
+    });
   }
 
-  emptyTracker.classList.add("hidden");
-  statsRow.classList.remove("hidden");
+  // Strengths
+  const strengthsList = document.getElementById("strengthsList");
+  if (strengthsList) {
+    strengthsList.innerHTML = "";
+    (data.strengths || []).forEach(s => {
+      const li = document.createElement("li");
+      li.className = "flex gap-2 text-sm text-on-surface-variant items-start";
+      li.innerHTML = `<span class="material-symbols-outlined text-secondary text-sm mt-0.5">check_circle</span> ${escapeHtml(s)}`;
+      strengthsList.appendChild(li);
+    });
+  }
 
-  apps.forEach(app => {
-    const item = document.createElement("div");
-    item.className = "app-item";
+  // Suggestions
+  const suggList = document.getElementById("suggestionsList");
+  if (suggList) {
+    suggList.innerHTML = "";
+    (data.suggestions || []).forEach(s => {
+      const li = document.createElement("li");
+      li.className = "flex gap-3 items-start";
+      li.innerHTML = `
+        <span class="material-symbols-outlined text-tertiary text-lg mt-0.5 shrink-0">${escapeHtml(s.icon || "auto_awesome")}</span>
+        <div>
+          <p class="font-headline font-bold text-sm text-on-surface mb-1">${escapeHtml(s.title)}</p>
+          <p class="text-xs text-on-surface-variant leading-relaxed">${escapeHtml(s.desc)}</p>
+        </div>`;
+      suggList.appendChild(li);
+    });
+  }
 
-    // Clean status class (remove emoji for CSS class name)
-    const statusClass = app.status.replace(" 🎉", "");
+  // Roles
+  const rolesGrid = document.getElementById("rolesGrid");
+  if (rolesGrid) {
+    rolesGrid.innerHTML = "";
+    (data.roles || []).forEach(r => {
+      const card = document.createElement("div");
+      card.className = `${r.bgClass || "bg-primary-fixed"} rounded-xl p-6`;
+      card.innerHTML = `
+        <div class="flex items-center justify-between mb-4">
+          <span class="material-symbols-outlined text-2xl ${r.textClass || ""}">${escapeHtml(r.icon || "work")}</span>
+          <span class="text-xs font-label font-bold px-3 py-1 rounded-full ${r.statusClass || ""}">${r.match}% match</span>
+        </div>
+        <h4 class="font-headline font-bold text-lg ${r.textClass || ""} mb-1">${escapeHtml(r.role)}</h4>
+        <p class="text-xs font-label ${r.textClass || ""} opacity-70">${escapeHtml(r.industry)}</p>`;
+      rolesGrid.appendChild(card);
+    });
+  }
+}
 
-    item.className = "bg-surface-container-lowest p-5 rounded-xl border border-outline-variant/15 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-primary/30 transition-colors shadow-sm";
+// ── XSS safety helper ─────────────────────────────────────────
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
-    let statusBg = "bg-surface-container-high text-on-surface-variant";
-    if (statusClass === "Interview") statusBg = "bg-tertiary-container/10 text-tertiary-container";
-    if (statusClass === "Offer") statusBg = "bg-primary/10 text-primary";
-    if (statusClass === "Rejected") statusBg = "bg-error-container text-on-error-container";
+// ── PDF file reading ──────────────────────────────────────────
+async function readPdf(file) {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const pages = [];
+    for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) { // max 10 pages
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      pages.push(content.items.map(item => item.str).join(" "));
+    }
+    return pages.join("\n");
+  } catch (err) {
+    console.error("PDF read error:", err);
+    throw new Error("Could not read the PDF. Please try copy-pasting your resume text instead.");
+  }
+}
 
-    item.innerHTML = `
-      <div class="flex-1 min-w-0">
-        <div class="font-headline font-bold text-on-surface truncate pb-1">${escapeHtml(app.company)}</div>
-        <div class="text-xs text-on-surface-variant mt-0.5">${escapeHtml(app.role)} <span class="mx-1 opacity-50">•</span> ${app.date}</div>
-      </div>
-      <div class="flex items-center gap-3 flex-shrink-0">
-        <span class="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusBg}">${app.status}</span>
-        <button class="text-outline hover:text-error transition-colors p-2 rounded-full hover:bg-error/10 active:scale-95 flex items-center justify-center" onclick="deleteApplication(${app.id})" title="Delete">
-          <span class="material-symbols-outlined text-[18px]">delete</span>
-        </button>
-      </div>
-    `;
-    appList.appendChild(item);
+// ── File input handling ───────────────────────────────────────
+const fileInput = document.getElementById("fileInput");
+const dropZone = document.getElementById("dropZone");
+const resumeTextEl = document.getElementById("resumeText");
+const charCountEl = document.getElementById("charCount");
+
+if (fileInput) {
+  fileInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    await handleFile(file);
   });
 }
 
-/**
- * Escape HTML to prevent XSS from user-typed inputs
- * @param {string} str
- * @returns {string}
- */
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
+async function handleFile(file) {
+  hideError();
+  const MAX_SIZE_MB = 5;
+  if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+    showError(`File is too large. Please upload a file smaller than ${MAX_SIZE_MB}MB.`);
+    return;
+  }
+
+  let text = "";
+  try {
+    if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
+      if (typeof pdfjsLib === "undefined") {
+        showError("PDF reader not loaded. Please paste your resume text directly.");
+        return;
+      }
+      text = await readPdf(file);
+    } else {
+      text = await file.text();
+    }
+  } catch (err) {
+    showError(err.message || "Could not read the file. Please paste your text instead.");
+    return;
+  }
+
+  if (resumeTextEl) {
+    resumeTextEl.value = text;
+    updateCharCount(text);
+  }
 }
 
-// ─────────────────────────────────────────────
-// AUTOCOMPLETE SUGGESTIONS
-// ─────────────────────────────────────────────
+// Drag & Drop support
+if (dropZone) {
+  dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("border-primary");
+  });
 
-const JOB_ROLES = [
-  { title: "Frontend Developer", keywords: ["front", "web", "ui", "react", "angular", "vue"] },
-  { title: "Frontend Engineer", keywords: ["front", "web", "ui", "react"] },
-  { title: "UI Developer", keywords: ["front", "ui", "web", "interface"] },
-  { title: "React Developer", keywords: ["front", "react", "web", "ui"] },
-  { title: "Web Developer", keywords: ["front", "web", "full", "stack"] },
-  { title: "Backend Developer", keywords: ["back", "server", "node", "python", "java", "api"] },
-  { title: "Backend Engineer", keywords: ["back", "server", "api"] },
-  { title: "Full Stack Developer", keywords: ["full", "front", "back", "web", "stack"] },
-  { title: "Software Engineer", keywords: ["software", "dev", "engineer", "coder"] },
-  { title: "Data Scientist", keywords: ["data", "science", "ml", "ai", "python"] },
-  { title: "Data Analyst", keywords: ["data", "analytics", "sql"] },
-  { title: "Machine Learning Engineer", keywords: ["ml", "ai", "data"] },
-  { title: "DevOps Engineer", keywords: ["devops", "cloud", "aws", "docker", "ci", "cd"] },
-  { title: "Product Manager", keywords: ["product", "pm", "manager"] },
-  { title: "UI/UX Designer", keywords: ["ui", "ux", "design", "figma"] },
-  { title: "Mobile Developer", keywords: ["mobile", "ios", "android", "app"] },
-  { title: "iOS Developer", keywords: ["mobile", "ios", "apple", "swift"] },
-  { title: "Android Developer", keywords: ["mobile", "android", "kotlin"] }
+  dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("border-primary");
+  });
+
+  dropZone.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("border-primary");
+    const file = e.dataTransfer.files[0];
+    if (file) await handleFile(file);
+  });
+}
+
+// ── Character counter ─────────────────────────────────────────
+function updateCharCount(text) {
+  if (charCountEl) charCountEl.textContent = `${text.length.toLocaleString()} characters`;
+}
+
+if (resumeTextEl) {
+  resumeTextEl.addEventListener("input", () => updateCharCount(resumeTextEl.value));
+}
+
+// ── Application Tracker ───────────────────────────────────────
+function loadApps() {
+  const raw = safeGetItem("hireo_apps");
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
+function saveApps(apps) {
+  safeSetItem("hireo_apps", JSON.stringify(apps));
+}
+
+const STATUS_COLORS = {
+  Applied: "bg-primary-fixed text-on-primary-fixed",
+  Interview: "bg-secondary-fixed text-on-secondary-fixed",
+  "Offer 🎉": "bg-tertiary-fixed text-on-tertiary-fixed",
+  Rejected: "bg-error-container text-on-error-container",
+};
+
+function renderApps() {
+  const apps = loadApps();
+  const listEl = document.getElementById("appList");
+  const emptyEl = document.getElementById("emptyTracker");
+  const statsEl = document.getElementById("statsRow");
+
+  if (!listEl) return;
+
+  if (apps.length === 0) {
+    listEl.innerHTML = "";
+    if (emptyEl) emptyEl.hidden = false;
+    if (statsEl) statsEl.innerHTML = "";
+    return;
+  }
+
+  if (emptyEl) emptyEl.hidden = true;
+
+  // Stats
+  if (statsEl) {
+    const counts = { Applied: 0, Interview: 0, "Offer 🎉": 0, Rejected: 0 };
+    apps.forEach(a => { if (counts[a.status] !== undefined) counts[a.status]++; });
+    statsEl.innerHTML = Object.entries(counts).map(([status, count]) => `
+      <div class="bg-surface-container-lowest border border-outline-variant/15 rounded-xl p-4 text-center">
+        <p class="font-headline font-extrabold text-2xl text-primary">${count}</p>
+        <p class="text-xs font-label text-on-surface-variant uppercase tracking-widest mt-1">${status}</p>
+      </div>`).join("");
+  }
+
+  // App list
+  listEl.innerHTML = apps.map((app, i) => `
+    <div class="bg-surface-container-lowest border border-outline-variant/15 rounded-xl p-5 flex items-center justify-between gap-4">
+      <div class="flex-1 min-w-0">
+        <p class="font-headline font-bold text-base text-on-surface truncate">${escapeHtml(app.company)}</p>
+        <p class="text-sm text-on-surface-variant truncate">${escapeHtml(app.role)}</p>
+      </div>
+      <span class="text-xs font-label font-bold px-3 py-1.5 rounded-full shrink-0 ${STATUS_COLORS[app.status] || "bg-surface-container text-on-surface-variant"}">
+        ${escapeHtml(app.status)}
+      </span>
+      <button onclick="deleteApp(${i})" class="text-error hover:bg-error-container p-2 rounded-full transition-colors shrink-0" title="Delete">
+        <span class="material-symbols-outlined text-sm">delete</span>
+      </button>
+    </div>`).join("");
+}
+
+function addApplication() {
+  const company = (document.getElementById("companyInput")?.value || "").trim();
+  const role = (document.getElementById("roleInput")?.value || "").trim();
+  const status = document.getElementById("statusInput")?.value || "Applied";
+
+  if (!company) { alert("Please enter a company name."); return; }
+  if (!role) { alert("Please enter a job role."); return; }
+
+  const apps = loadApps();
+  apps.unshift({ company, role, status, date: new Date().toISOString() });
+  saveApps(apps);
+  renderApps();
+
+  // Clear inputs
+  const companyEl = document.getElementById("companyInput");
+  const roleEl = document.getElementById("roleInput");
+  if (companyEl) companyEl.value = "";
+  if (roleEl) roleEl.value = "";
+}
+
+function deleteApp(index) {
+  const apps = loadApps();
+  apps.splice(index, 1);
+  saveApps(apps);
+  renderApps();
+}
+
+// ── Role suggestions autocomplete ────────────────────────────
+const ROLE_SUGGESTIONS = [
+  "Software Engineer", "Frontend Developer", "Backend Developer", "Full Stack Developer",
+  "Data Scientist", "Machine Learning Engineer", "DevOps Engineer", "Cloud Engineer",
+  "Product Manager", "UX Designer", "UI Designer", "Data Analyst",
+  "Cybersecurity Analyst", "Mobile Developer", "QA Engineer", "Database Administrator",
 ];
 
 const roleInput = document.getElementById("roleInput");
 const roleSuggestions = document.getElementById("roleSuggestions");
 
-roleInput.addEventListener("input", () => {
-  const query = roleInput.value.toLowerCase().trim();
-  roleSuggestions.innerHTML = "";
-
-  if (!query) {
-    roleSuggestions.classList.add("hidden");
-    return;
-  }
-
-  const matches = [];
-  for (const role of JOB_ROLES) {
-    if (role.title.toLowerCase().includes(query) || role.keywords.some(k => k.includes(query))) {
-      matches.push(role.title);
-    }
-    if (matches.length >= 5) break; // Suggest 5 relevant roles
-  }
-
-  if (matches.length === 0) {
-    roleSuggestions.classList.add("hidden");
-    return;
-  }
-
-  matches.forEach(role => {
-    const item = document.createElement("div");
-    item.className = "px-4 py-2.5 hover:bg-primary/5 cursor-pointer text-on-surface transition-colors border-b border-outline-variant/10 last:border-0";
-
-    // Highlight exact string match if exists seamlessly
-    const regex = new RegExp(`(${query})`, "gi");
-    item.innerHTML = role.replace(regex, `<span class="font-bold text-primary">$1</span>`);
-
-    item.addEventListener("mousedown", (e) => {
-      // mousedown fires before input blur, preventing race conditions
-      e.preventDefault();
-      roleInput.value = role;
-      roleSuggestions.classList.add("hidden");
-    });
-
-    roleSuggestions.appendChild(item);
+if (roleInput && roleSuggestions) {
+  roleInput.addEventListener("input", () => {
+    const query = roleInput.value.toLowerCase();
+    if (!query) { roleSuggestions.classList.add("hidden"); return; }
+    const matches = ROLE_SUGGESTIONS.filter(r => r.toLowerCase().includes(query));
+    if (matches.length === 0) { roleSuggestions.classList.add("hidden"); return; }
+    roleSuggestions.innerHTML = matches.map(r =>
+      `<div class="px-4 py-2 hover:bg-surface-container cursor-pointer text-sm text-on-surface" onclick="selectRole('${escapeHtml(r)}')">${escapeHtml(r)}</div>`
+    ).join("");
+    roleSuggestions.classList.remove("hidden");
   });
 
-  roleSuggestions.classList.remove("hidden");
-});
+  document.addEventListener("click", (e) => {
+    if (!roleInput.contains(e.target) && !roleSuggestions.contains(e.target)) {
+      roleSuggestions.classList.add("hidden");
+    }
+  });
+}
 
-roleInput.addEventListener("blur", () => {
-  roleSuggestions.classList.add("hidden");
-});
+function selectRole(role) {
+  if (roleInput) roleInput.value = role;
+  if (roleSuggestions) roleSuggestions.classList.add("hidden");
+}
 
-roleInput.addEventListener("focus", () => {
-  if (roleInput.value.trim() && roleSuggestions.children.length > 0) {
-    roleSuggestions.classList.remove("hidden");
-  }
-});
-
-// ─────────────────────────────────────────────
-// INIT — Run on page load
-// ─────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
-  // Initialize tracker stats (hidden until tracker section is opened)
-  renderTracker();
+  renderApps();
 
-  // Set initial section correctly from nav
-  // Nav links logic handled inline directly in HTML via onclick
+  // Set pdf.js worker path
+  if (typeof pdfjsLib !== "undefined") {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+  }
 });

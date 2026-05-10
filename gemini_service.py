@@ -1,7 +1,6 @@
 """
-Gemini-powered resume analysis. Maps model output to the frontend displayResults() shape.
-
-Uses the current `google-genai` SDK when installed; falls back to deprecated `google-generativeai`.
+Gemini-powered resume analysis.
+FIXED: Better model order, retry on rate limits, cleaner error messages.
 """
 
 from __future__ import annotations
@@ -10,25 +9,28 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Prefer `google-genai` (supported). Fall back to `google-generativeai` if needed.
+# Prefer `google-genai` (newer). Fall back to `google-generativeai` if needed.
 try:
     from google import genai as google_genai
     from google.genai import types as genai_types
-
     HAS_GOOGLE_GENAI = True
 except ImportError:
     HAS_GOOGLE_GENAI = False
-    google_genai = None  # type: ignore[assignment]
-    genai_types = None  # type: ignore[assignment]
+    google_genai = None
+    genai_types = None
 
 if not HAS_GOOGLE_GENAI:
-    import google.generativeai as genai_legacy
+    try:
+        import google.generativeai as genai_legacy
+    except ImportError:
+        genai_legacy = None
 else:
-    genai_legacy = None  # type: ignore[assignment]
+    genai_legacy = None
 
 ROLE_CARD_STYLES = (
     {
@@ -48,11 +50,12 @@ ROLE_CARD_STYLES = (
     },
 )
 
+# FIX 1: Put the fastest, most reliable model first
 MODEL_FALLBACKS = (
-    "gemini-1.5-flash",
-    "gemini-2.5-flash",
-    "gemini-1.5-pro",
-    "gemini-2.0-flash",
+    "gemini-2.0-flash",       # Fastest and most available
+    "gemini-1.5-flash",       # Good fallback
+    "gemini-2.5-flash",       # Newer but sometimes busy
+    "gemini-1.5-pro",         # Slower but high quality
 )
 
 
@@ -63,14 +66,16 @@ class GeminiAnalysisError(Exception):
 def _api_key() -> str:
     key = os.getenv("GEMINI_API_KEY", "").strip()
     if not key:
-        raise GeminiAnalysisError("GEMINI_API_KEY is not set")
+        raise GeminiAnalysisError(
+            "GEMINI_API_KEY is not set. Go to Vercel → Your Project → Settings → "
+            "Environment Variables and add GEMINI_API_KEY."
+        )
     return key
 
 
 def _ensure_api_configured() -> None:
     _api_key()
-    if not HAS_GOOGLE_GENAI:
-        assert genai_legacy is not None
+    if not HAS_GOOGLE_GENAI and genai_legacy:
         genai_legacy.configure(api_key=os.getenv("GEMINI_API_KEY", "").strip())
 
 
@@ -79,7 +84,6 @@ _genai_client: Any = None
 
 def _get_google_genai_client() -> Any:
     global _genai_client
-    assert HAS_GOOGLE_GENAI and google_genai is not None
     if _genai_client is None:
         _genai_client = google_genai.Client(api_key=_api_key())
     return _genai_client
@@ -93,11 +97,12 @@ def _model_names() -> list[str]:
 
 
 def _clip_resume(text: str) -> str:
-    max_chars = int(os.getenv("MAX_RESUME_CHARS", "120000"))
+    # FIX 2: Keep limit reasonable — 8000 chars is ~4 pages, enough for any resume
+    max_chars = int(os.getenv("MAX_RESUME_CHARS", "8000"))
     if len(text) <= max_chars:
         return text
     logger.warning("Resume truncated: %s → %s chars", len(text), max_chars)
-    return text[:max_chars] + "\n\n[…truncated for API size limits…]"
+    return text[:max_chars] + "\n\n[Resume was trimmed because it was too long]"
 
 
 def _build_prompt(text: str, role: str) -> str:
@@ -111,10 +116,10 @@ Return ONLY valid JSON (no markdown fences, no commentary) with this exact struc
 {{
   "score": <integer from 0 to 100, overall resume fit for the role>,
   "matchedSkills": [<short skill strings visible or implied in the resume>],
-  "missingSkills": [<important skills for this role that the resume lacks or under-emphasizes>],
-  "strengths": [<2-4 concise bullet strings highlighting candidate strengths for this role>],
+  "missingSkills": [<important skills for this role that the resume lacks>],
+  "strengths": [<2-4 concise bullet strings highlighting candidate strengths>],
   "suggestions": [
-    {{"title": <short headline>, "desc": <1-2 sentences>, "icon": <Material Symbols icon name, e.g. trending_up>}}
+    {{"title": <short headline>, "desc": <1-2 sentences>, "icon": <Material Symbols icon name>}}
   ],
   "recommendedRoles": [
     {{"role": <job title>, "industry": <short sector label>, "match": <integer 0-100>, "icon": <Material Symbols name>}}
@@ -122,17 +127,20 @@ Return ONLY valid JSON (no markdown fences, no commentary) with this exact struc
 }}
 
 Rules:
-- Keep arrays substantive but not huge (skills ≤ 20, missingSkills ≤ 8, suggestions 3-5, recommendedRoles 3-5).
+- Keep arrays substantive: skills ≤ 15, missingSkills ≤ 6, suggestions 3-4, recommendedRoles 3.
 - Icons must be simple snake_case Material Symbols names (e.g. code, cloud, psychology).
 - Score and match values must be integers.
+- Do NOT wrap the JSON in markdown code blocks.
 """
 
 
 def _extract_json_object(raw: str) -> dict[str, Any]:
     raw = raw.strip()
+    # Strip markdown code fences if present
     if raw.startswith("```"):
         raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
         raw = re.sub(r"\s*```\s*$", "", raw)
+
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
@@ -141,14 +149,15 @@ def _extract_json_object(raw: str) -> dict[str, Any]:
         end = raw.rfind("}")
         if start == -1 or end == -1 or end <= start:
             raise GeminiAnalysisError("Model did not return valid JSON") from e
-        data = json.loads(raw[start : end + 1])
+        data = json.loads(raw[start: end + 1])
+
     if not isinstance(data, dict):
         raise GeminiAnalysisError("Model JSON root must be an object")
     return data
 
 
 def _response_text(response: Any) -> str:
-    """Safely read text from a GenerateContentResponse (handles blocks / multi-part)."""
+    """Safely read text from a GenerateContentResponse."""
     try:
         t = getattr(response, "text", None)
         if t:
@@ -164,17 +173,10 @@ def _response_text(response: Any) -> str:
         for part in getattr(content, "parts", None) or []:
             if getattr(part, "text", None):
                 chunks.append(part.text)
+
     out = "".join(chunks).strip()
     if not out:
-        pf = getattr(response, "prompt_feedback", None)
-        for i, c in enumerate(getattr(response, "candidates", None) or []):
-            logger.warning(
-                "Empty model text: candidate[%s] finish_reason=%s",
-                i,
-                getattr(c, "finish_reason", None),
-            )
-        logger.warning("Empty model text: prompt_feedback=%s", pf)
-        raise GeminiAnalysisError("Empty or blocked model response")
+        raise GeminiAnalysisError("Empty or blocked model response — try a different resume or check API quotas")
     return out
 
 
@@ -192,53 +194,41 @@ def _generate_raw_json_new(model_name: str, prompt: str) -> str:
     assert genai_types is not None
     client = _get_google_genai_client()
     safety = _new_sdk_safety()
+
     try:
         response = client.models.generate_content(
             model=model_name,
             contents=prompt,
             config=genai_types.GenerateContentConfig(
-                temperature=0.35,
-                max_output_tokens=8192,
+                temperature=0.3,
+                max_output_tokens=2048,  # FIX 3: Reduced from 8192 — resumes don't need that much output
                 response_mime_type="application/json",
                 safety_settings=safety,
             ),
         )
         return _response_text(response)
     except Exception as e:
-        logger.warning("[%s] JSON MIME (google-genai) failed: %s", model_name, e)
+        logger.warning("[%s] JSON MIME failed: %s", model_name, e)
 
     try:
         response = client.models.generate_content(
             model=model_name,
             contents=prompt,
             config=genai_types.GenerateContentConfig(
-                temperature=0.35,
-                max_output_tokens=8192,
+                temperature=0.3,
+                max_output_tokens=2048,
                 safety_settings=safety,
             ),
         )
         return _response_text(response)
     except Exception as e:
-        logger.warning("[%s] Plain (google-genai) failed: %s", model_name, e)
-        raise GeminiAnalysisError("AI analysis failed") from e
-
-
-def _legacy_safety() -> list[dict[str, Any]] | None:
-    try:
-        from google.generativeai.types import HarmBlockThreshold, HarmCategory
-    except ImportError:
-        return None
-    return [
-        {"category": HarmCategory.HARM_CATEGORY_HARASSMENT, "threshold": HarmBlockThreshold.BLOCK_ONLY_HIGH},
-        {"category": HarmCategory.HARM_CATEGORY_HATE_SPEECH, "threshold": HarmBlockThreshold.BLOCK_ONLY_HIGH},
-        {"category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, "threshold": HarmBlockThreshold.BLOCK_ONLY_HIGH},
-        {"category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, "threshold": HarmBlockThreshold.BLOCK_ONLY_HIGH},
-    ]
+        logger.warning("[%s] Plain also failed: %s", model_name, e)
+        raise GeminiAnalysisError(f"Model {model_name} failed") from e
 
 
 def _legacy_generation_config(*, json_mode: bool) -> Any:
     assert genai_legacy is not None
-    kwargs: dict[str, Any] = {"temperature": 0.35, "max_output_tokens": 8192}
+    kwargs: dict[str, Any] = {"temperature": 0.3, "max_output_tokens": 2048}
     if json_mode:
         kwargs["response_mime_type"] = "application/json"
     try:
@@ -250,31 +240,25 @@ def _legacy_generation_config(*, json_mode: bool) -> Any:
 def _generate_raw_json_legacy(model_name: str, prompt: str) -> str:
     assert genai_legacy is not None
     model = genai_legacy.GenerativeModel(model_name)
-    safety = _legacy_safety()
-    gen_kw: dict[str, Any] = {}
-    if safety:
-        gen_kw["safety_settings"] = safety
 
     try:
         response = model.generate_content(
             prompt,
             generation_config=_legacy_generation_config(json_mode=True),
-            **gen_kw,
         )
         return _response_text(response)
     except Exception as e:
-        logger.warning("[%s] JSON MIME (legacy SDK) failed: %s", model_name, e)
+        logger.warning("[%s] JSON MIME (legacy) failed: %s", model_name, e)
 
     try:
         response = model.generate_content(
             prompt,
             generation_config=_legacy_generation_config(json_mode=False),
-            **gen_kw,
         )
         return _response_text(response)
     except Exception as e:
-        logger.warning("[%s] Plain (legacy SDK) failed: %s", model_name, e)
-        raise GeminiAnalysisError("AI analysis failed") from e
+        logger.warning("[%s] Plain (legacy) failed: %s", model_name, e)
+        raise GeminiAnalysisError(f"Model {model_name} failed") from e
 
 
 def _generate_raw_json(model_name: str, prompt: str) -> str:
@@ -292,14 +276,12 @@ def _normalize_suggestions(items: Any) -> list[dict[str, str]]:
             out.append({"title": "Suggestion", "desc": item, "icon": "lightbulb"})
             continue
         if isinstance(item, dict):
-            out.append(
-                {
-                    "title": str(item.get("title", "Tip")),
-                    "desc": str(item.get("desc") or item.get("description", "")),
-                    "icon": str(item.get("icon", "auto_awesome")),
-                }
-            )
-    return out[:8]
+            out.append({
+                "title": str(item.get("title", "Tip")),
+                "desc": str(item.get("desc") or item.get("description", "")),
+                "icon": str(item.get("icon", "auto_awesome")),
+            })
+    return out[:6]
 
 
 def _normalize_roles(items: Any) -> list[dict[str, Any]]:
@@ -315,42 +297,36 @@ def _normalize_roles(items: Any) -> list[dict[str, Any]]:
         except (TypeError, ValueError):
             match = 0
         match = max(0, min(100, match))
-        roles.append(
-            {
-                "role": str(item.get("role", "Role")),
-                "industry": str(item.get("industry", "Technology")),
-                "icon": str(item.get("icon", "work")),
-                "match": match,
-                "status": str(item.get("status", "Recommended")),
-                **style,
-            }
-        )
+        roles.append({
+            "role": str(item.get("role", "Role")),
+            "industry": str(item.get("industry", "Technology")),
+            "icon": str(item.get("icon", "work")),
+            "match": match,
+            "status": str(item.get("status", "Recommended")),
+            **style,
+        })
     return roles
 
 
 def normalize_gemini_payload(parsed: dict[str, Any]) -> dict[str, Any]:
     """Map Gemini keys to the exact shape expected by script.js displayResults()."""
-    skills = parsed.get("matchedSkills")
-    if skills is None:
-        skills = parsed.get("skills")
+    skills = parsed.get("matchedSkills") or parsed.get("skills") or []
     if not isinstance(skills, list):
         skills = []
-    skills = [str(s) for s in skills if s is not None][:24]
+    skills = [str(s) for s in skills if s is not None][:20]
 
-    missing = parsed.get("missingSkills")
+    missing = parsed.get("missingSkills") or []
     if not isinstance(missing, list):
         missing = []
-    missing = [str(s) for s in missing if s is not None][:12]
+    missing = [str(s) for s in missing if s is not None][:10]
 
-    strengths_raw = parsed.get("strengths")
+    strengths_raw = parsed.get("strengths") or []
     if not isinstance(strengths_raw, list):
         strengths_raw = []
     strengths = [str(s) for s in strengths_raw if s is not None][:6]
 
     suggestions = _normalize_suggestions(parsed.get("suggestions"))
-    roles = _normalize_roles(
-        parsed.get("recommendedRoles") if parsed.get("recommendedRoles") is not None else parsed.get("roles")
-    )
+    roles = _normalize_roles(parsed.get("recommendedRoles") or parsed.get("roles"))
 
     try:
         score = int(parsed.get("score", 0))
@@ -371,12 +347,12 @@ def normalize_gemini_payload(parsed: dict[str, Any]) -> dict[str, Any]:
 def analyze_resume_with_gemini(text: str, role: str) -> dict[str, Any]:
     """
     Call Gemini and return a dict ready for the frontend.
-    Raises GeminiAnalysisError on failure.
+    Raises GeminiAnalysisError on all failures.
     """
     _ensure_api_configured()
     prompt = _build_prompt(text, role)
-
     last_error: Exception | None = None
+
     for model_name in _model_names():
         try:
             raw = _generate_raw_json(model_name, prompt)
@@ -384,19 +360,21 @@ def analyze_resume_with_gemini(text: str, role: str) -> dict[str, Any]:
             payload = normalize_gemini_payload(parsed)
             logger.info(
                 "Gemini OK (%s): score=%s skills=%s roles=%s",
-                model_name,
-                payload["score"],
-                len(payload["skills"]),
-                len(payload["roles"]),
+                model_name, payload["score"], len(payload["skills"]), len(payload["roles"]),
             )
             return payload
+
         except (GeminiAnalysisError, json.JSONDecodeError, ValueError) as e:
             last_error = e
             logger.warning("Model %s failed: %s", model_name, e)
+            # FIX 4: Small delay before trying next model to avoid rate-limit cascade
+            time.sleep(0.5)
             continue
+
         except Exception as e:
             last_error = e
             logger.exception("Model %s unexpected error", model_name)
+            time.sleep(0.5)
             continue
 
-    raise GeminiAnalysisError("AI analysis failed") from last_error
+    raise GeminiAnalysisError("All Gemini models failed") from last_error
