@@ -12,10 +12,10 @@
 // ── FIX 1: Smart API URL ─────────────────────────────────────
 // On Vercel, the frontend and backend are the same domain.
 // Locally, Flask runs on port 5000.
-const API_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-  ? "http://localhost:5000/analyze"
-  : "/analyze";  // Same-origin on Vercel — this is the most important fix!
-
+const API_URL =
+  window.location.hostname === "localhost"
+    ? "http://localhost:5000/analyze"
+    : "https://hireo-1-9x6m.onrender.com/analyze";
 // ── FIX 2: fetch with timeout ────────────────────────────────
 async function fetchWithTimeout(url, options = {}, timeoutMs = 55000) {
   const controller = new AbortController();
